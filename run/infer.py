@@ -42,15 +42,3 @@ def infer_bytes(text: str, *, num_tokens: int, key: jax.random.PRNGKey):
     id_sequence = hax.named(ids, "position")
     for id in generate_ids(id_sequence, num_tokens, key):
         yield gpt2_tokenizer.decode_single_token_bytes(id)
-
-
-if __name__ == "__main__":
-    import sys
-
-    for token_bytes in infer_bytes(
-        "The sun is the center of the solar system.",
-        num_tokens=100,
-        key=jax.random.key(5)
-    ):
-        sys.stdout.buffer.write(token_bytes)
-        sys.stdout.flush()
