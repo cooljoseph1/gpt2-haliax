@@ -1,6 +1,7 @@
 import haliax as hax
 from haliax import NamedArray
 import jax
+import equinox as eqx
 
 from typing import Optional, Iterator
 
@@ -8,30 +9,31 @@ from  gpt2 import Gpt2State
 from .load_gpt2 import gpt2_model, VocabAxis
 from .tokenizer import gpt2_tokenizer
 
+def _get_next_id_and_state(
+        id_sequence: NamedArray,
+        key: jax.random.PRNGKey,
+        state: Optional[Gpt2State] = None
+) -> tuple[NamedArray, Gpt2State]:
+    """Given a sequence of ids (encoded tokens), generate a new id and return the new state"""
 
-def get_logits(
-    id_sequence: NamedArray,
-    state: Optional[Gpt2State] = None
-) -> NamedArray:
-    """Given a sequence of ids (encoded tokens), output the logits for the next id"""
     # logits for all the tokens
-    all_output_logits, state = gpt2_model(
+    all_logits, state = gpt2_model(
         id_sequence,
         PositionAxis="position",
         inference=True,
         state=state,
         return_state=True
     )
-    output_logits = all_output_logits["position", -1:] # logits for the new token
-    return output_logits, state
+    # logits for the new token only
+    logits = all_logits["position", -1:]
 
-def sample_id(id_logits: NamedArray, key: jax.random.PRNGKey):
-    choice = hax.random.categorical(
+    new_id = hax.random.categorical(
         key=key,
-        logits=id_logits,
+        logits=logits,
         axis=VocabAxis
     )
-    return choice
+    return new_id, state
+
 
 def generate_ids(
     id_sequence: NamedArray,
@@ -43,12 +45,12 @@ def generate_ids(
      i = 0
      while i != num_ids:
         key, subkey = jax.random.split(key, 2)
-        next_logits, state = get_logits(id_sequence, state=state)
-        next_id = sample_id(id_logits=next_logits, key=subkey)
+        next_id, state = _get_next_id_and_state(id_sequence=id_sequence, key=subkey, state=state)
 
         yield next_id.item()
         id_sequence = next_id
         i += 1
+
 
 def infer_bytes(text: str, *, key: jax.random.PRNGKey, num_tokens: int = -1):
     """Infer the next `num_tokens` tokens for the given text, returning the result as a string"""

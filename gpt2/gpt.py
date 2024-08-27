@@ -104,7 +104,6 @@ class Gpt2(eqx.Module):
             transformer_states = [None for _ in self.transformers]
         else:
             transformer_states = state.transformer_states
-
         new_transformer_states = []
         for transformer, transformer_state in zip(self.transformers, transformer_states):
             key, subkey = jax.random.split(key, 2) if key is not None else (None, None)
@@ -131,3 +130,4 @@ class Gpt2(eqx.Module):
             return logits, new_state
         else:
             return logits
+        
