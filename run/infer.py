@@ -8,7 +8,11 @@ from .tokenizer import gpt2_tokenizer
 
 def get_logits(id_sequence: NamedArray):
     """Given a sequence of ids (encoded tokens), output the logits for the next id"""
-    all_output_logits = gpt2_model(id_sequence, PositionAxis="position")  # logits for all the tokens
+    # logits for all the tokens
+    all_output_logits = gpt2_model(
+        id_sequence,
+        PositionAxis="position"
+    )
     output_logits = all_output_logits[{"position": -1}] # logits for the new token
     return output_logits
 

@@ -1,9 +1,10 @@
 import jax
 import equinox as eqx
 
+import haliax as hax
 from haliax import AxisSelector, AxisSpec, NamedArray
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 from .attention import AttentionBlock, AttentionConfig
 from .feed_forward import FeedForwardBlock, FeedForwardConfig
@@ -14,14 +15,17 @@ class TransformerConfig(NamedTuple):
     attention_config: AttentionConfig
     layer_norm2_config: LayerNormConfig
     feed_forward_config: FeedForwardConfig
+    dropout_prob: float = 0.1
 
 class Transformer(eqx.Module):
     """A single transformer layer."""
 
     layer_norm1: LayerNorm
     attention: AttentionBlock
+    attention_dropout: hax.nn.Dropout
     layer_norm2: LayerNorm
     feed_forward: FeedForwardBlock
+    feed_forward_dropout: hax.nn.Dropout
 
     @staticmethod
     def init(
@@ -58,11 +62,16 @@ class Transformer(eqx.Module):
             use_bias=config.layer_norm2_config.use_bias
         )
 
+        attention_dropout = hax.nn.Dropout(pdrop=config.dropout_prob)
+        feed_forward_dropout = hax.nn.Dropout(pdrop=config.dropout_prob)
+
         return Transformer(
             layer_norm1=layer_norm1,
             attention=attention_block,
+            attention_dropout=attention_dropout,
             layer_norm2=layer_norm2,
-            feed_forward=feed_forward_block
+            feed_forward=feed_forward_block,
+            feed_forward_dropout=feed_forward_dropout
         )
 
     @jax.named_call
@@ -70,14 +79,37 @@ class Transformer(eqx.Module):
         self,
         input_sequence: NamedArray,
         *,
-        PositionAxis: AxisSelector
+        PositionAxis: AxisSelector,
+        inference: bool = True,
+        key: Optional[jax.random.PRNGKey] = None
     ) -> NamedArray:
+        k_attention, k_dropout1, k_dropout2 = jax.random.split(key, 3) if key is not None else (None, None, None)
+
+        # Attention block
         normed_input = self.layer_norm1(input_sequence)
-        attention_output = self.attention(normed_input, PositionAxis=PositionAxis)
+        attention_output = self.attention(
+            normed_input,
+            PositionAxis=PositionAxis,
+            inference=inference,
+            key=k_attention
+        )
+        # dropout
+        attention_output = self.attention_dropout(
+            attention_output,
+            inference=inference,
+            key=k_dropout1
+        )
         attention_output = input_sequence + attention_output
 
+        # Feed forward block
         normed_attention = self.layer_norm2(attention_output)
         output_sequence = self.feed_forward(normed_attention)
+        # dropout
+        output_sequence = self.feed_forward_dropout(
+            output_sequence,
+            inference=inference,
+            key=k_dropout2
+        )
         output_sequence = attention_output + output_sequence
 
         return output_sequence
