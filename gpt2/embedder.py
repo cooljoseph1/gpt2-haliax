@@ -57,11 +57,13 @@ class Embedder(eqx.Module):
     def embed(
         self,
         input_ids: NamedArray,
-        PositionAxis: AxisSelector = "position"
+        PositionAxis: AxisSelector = "position",
+        *,
+        first_position: int = 0 # Position of the first input_ids in the sequence. Not always zero, such as when caching values during inference
     ) -> NamedArray:
         # Positional embeddings
         PositionAxis = input_ids.resolve_axis(PositionAxis) # Convert to an Axis (perhaps it was a string)
-        positions = hax.arange(PositionAxis)
+        positions = hax.arange(PositionAxis, start=first_position)
         position_embeds = self.position_embedder(positions)
 
         # Text embeddings

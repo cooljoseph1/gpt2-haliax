@@ -6,7 +6,7 @@ from haliax import AxisSelector, AxisSpec, NamedArray
 
 from typing import NamedTuple, Optional
 
-from .attention import AttentionBlock, AttentionConfig
+from .attention import AttentionBlock, AttentionConfig, AttentionState
 from .feed_forward import FeedForwardBlock, FeedForwardConfig
 from ..layer_norm import LayerNorm, LayerNormConfig
 
@@ -16,6 +16,11 @@ class TransformerConfig(NamedTuple):
     layer_norm2_config: LayerNormConfig
     feed_forward_config: FeedForwardConfig
     dropout_prob: float = 0.1
+
+
+class TransformerState(eqx.Module):
+    attention_state: AttentionState
+
 
 class Transformer(eqx.Module):
     """A single transformer layer."""
@@ -81,7 +86,10 @@ class Transformer(eqx.Module):
         *,
         PositionAxis: AxisSelector,
         inference: bool = True,
-        key: Optional[jax.random.PRNGKey] = None
+        key: Optional[jax.random.PRNGKey] = None,
+        # To speed up inference, you can pass a state and ask for a state back
+        state: Optional[TransformerState] = None,
+        return_state: bool = False
     ) -> NamedArray:
         k_attention, k_dropout1, k_dropout2 = jax.random.split(key, 3) if key is not None else (None, None, None)
 
@@ -91,8 +99,14 @@ class Transformer(eqx.Module):
             normed_input,
             PositionAxis=PositionAxis,
             inference=inference,
-            key=k_attention
+            key=k_attention,
+            state=state.attention_state if state is not None else None,
+            return_state=return_state
         )
+        if return_state:
+            attention_output, attention_state = attention_output
+            new_state = TransformerState(attention_state=attention_state)
+
         # dropout
         attention_output = self.attention_dropout(
             attention_output,
@@ -112,4 +126,7 @@ class Transformer(eqx.Module):
         )
         output_sequence = attention_output + output_sequence
 
-        return output_sequence
+        if return_state:
+            return output_sequence, new_state
+        else:
+            return output_sequence
