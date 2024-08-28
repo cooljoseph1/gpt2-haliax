@@ -15,17 +15,17 @@ class AttentionConfig(NamedTuple):
 
 class AttentionState(eqx.Module):
     # Previously computed keys and values, possibily padded left with 0 vectors
-    cached_kv: NamedArray
+    kv_cache: NamedArray
 
     PositionAxis: AxisSelector = eqx.field(static=True)
-    # First index in cached_kv that contains actual data; the rest is zero vectors to pad to a consistent size
+    # First index in kv_cache that contains actual data; the rest is zero vectors to pad to a consistent size
     first_index: int = 0
     
     chunk_size: ClassVar[int] = 1023
     KVAxis: ClassVar[AxisSelector] = Axis("kv", 2)
 
     def align_to_chunk_size(self) -> "AttentionState":
-        kv = self.cached_kv
+        kv = self.kv_cache
         PositionAxis = kv.resolve_axis(self.PositionAxis)
         length = PositionAxis.size
         used_length = length - self.first_index
@@ -40,7 +40,7 @@ class AttentionState(eqx.Module):
         new_first_index = NewPositionAxis.size - used_length
 
         return AttentionState(
-            cached_kv=padded_kv,
+            kv_cache=padded_kv,
             first_index=new_first_index,
             PositionAxis=NewPositionAxis
         )
@@ -127,7 +127,7 @@ class AttentionBlock(eqx.Module):
 
         # Concatenate the previous values and keys
         if state is not None:
-            previous_keys, previous_values = state.cached_kv[AttentionState.KVAxis, 0], state.cached_kv[AttentionState.KVAxis, 1]
+            previous_keys, previous_values = state.kv_cache[AttentionState.KVAxis, 0], state.kv_cache[AttentionState.KVAxis, 1]
             keys = hax.concatenate(key_value_pos_axis_name, [previous_keys, keys])
             values = hax.concatenate(key_value_pos_axis_name, [previous_values, values])
 
@@ -138,7 +138,7 @@ class AttentionBlock(eqx.Module):
         if state is None:
             start_position = 0
         else:
-            start_position = state.cached_kv.resolve_axis(key_value_pos_axis_name).size
+            start_position = state.kv_cache.resolve_axis(key_value_pos_axis_name).size
 
         # Make the causal mask
         causal_mask = hax.arange(PositionAxis, start=start_position).broadcast_axis(KeyValuePositionAxis) >= hax.arange(KeyValuePositionAxis)
@@ -165,7 +165,7 @@ class AttentionBlock(eqx.Module):
         if return_state:
             kv = hax.stack(AttentionState.KVAxis, [keys, values])
             new_state = AttentionState(
-                cached_kv=kv,
+                kv_cache=kv,
                 first_index=0 if state is None else state.first_index,
                 PositionAxis=KeyValuePositionAxis
             )
