@@ -21,6 +21,7 @@ class AttentionState(eqx.Module):
     # First index in kv_cache that contains actual data; the rest is zero vectors to pad to a consistent size
     first_index: int = 0
     
+    # The size of a "chunk" to pad to
     chunk_size: ClassVar[int] = 1023
     KVAxis: ClassVar[AxisSelector] = Axis("kv", 2)
 
