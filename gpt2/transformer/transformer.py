@@ -79,7 +79,6 @@ class Transformer(eqx.Module):
             feed_forward_dropout=feed_forward_dropout
         )
 
-    @eqx.filter_jit
     @jax.named_call
     def __call__(
         self,

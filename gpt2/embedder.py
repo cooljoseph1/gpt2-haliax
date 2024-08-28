@@ -53,7 +53,6 @@ class Embedder(eqx.Module):
             token_embedder=token_embedder
         )
 
-    @eqx.filter_jit
     @jax.named_call
     def embed(
         self,

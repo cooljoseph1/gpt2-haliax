@@ -71,7 +71,6 @@ class AttentionBlock(eqx.Module):
             project_out=project_out
         )
 
-    @eqx.filter_jit
     @jax.named_call
     def __call__(
         self,
