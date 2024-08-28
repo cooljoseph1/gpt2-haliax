@@ -31,7 +31,7 @@ pip install -r requirements.txt
 ## Running
 To do inference, run the command
 ```sh
-python3 inference.py --prompt "<prompt>"
+./infer.py --prompt "<prompt>"
 ```
 where `<prompt>` is your text prompt. There are more options, which can be printed out using the `--help` flag.
 
@@ -39,5 +39,6 @@ You don't have to provide a prompt; if you don't provide a prompt, it will inste
 
 ## TODO
 - [ ] Get inference to go longer than 1024 tokens. (GPT2 was only trained with 1024 positional embeddings. This might not be possible to do efficiently.)
+- [ ] Figure out a way to do Ahead-Of-Time compilation? Might be useful for speeding things up over multiple prompts
 - [ ] Add training in a train/ folder (right now it has inference in a run/ folder)
 - [ ] Figure out a better way to load safetensors? Right now I'm using Pytree2Safetensors, which is a not-very-polished library I made in a few hours.
