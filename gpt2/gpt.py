@@ -6,7 +6,7 @@ from haliax import Axis, AxisSelector, NamedArray
 
 from typing import NamedTuple, Optional
 
-from .transformer import Transformer, TransformerConfig, TransformerState
+from .transformer import Transformer, TransformerConfig, TransformerState, AttentionState
 from .embedder import Embedder, EmbedderConfig
 from .layer_norm import LayerNorm, LayerNormConfig
 
@@ -21,7 +21,14 @@ class Gpt2Config(NamedTuple):
 
 class Gpt2State(eqx.Module):
     transformer_states: list[TransformerState]
-    first_position: int = eqx.field(static=True, default=0) # Position of the first new token to process
+    first_position: int = 0
+
+    def align_to_chunks(self) -> "Gpt2State":
+        return eqx.tree_at(
+            where=lambda gpt2state: [transformer_state.attention_state for transformer_state in gpt2state.transformer_states],
+            pytree=self,
+            replace_fn=AttentionState.align_to_chunk_size
+        )
 
 
 class Gpt2(eqx.Module):
@@ -94,7 +101,6 @@ class Gpt2(eqx.Module):
         k_dropout, key = jax.random.split(key, 2) if key is not None else (None, None)
 
         first_position = 0 if state is None else state.first_position
-
         # embed
         embeddings = self.embedder.embed(input_ids, PositionAxis=PositionAxis, first_position=first_position)
         # dropout on the initial embeddings

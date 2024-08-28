@@ -14,15 +14,42 @@ class AttentionConfig(NamedTuple):
 
 
 class AttentionState(eqx.Module):
-    # Previously computed keys and values
+    # Previously computed keys and values, possibily padded left with 0 vectors
     cached_kv: NamedArray
+
+    PositionAxis: AxisSelector = eqx.field(static=True)
+    # First index in cached_kv that contains actual data; the rest is zero vectors to pad to a consistent size
+    first_index: int = 0
+    
+    chunk_size: ClassVar[int] = 1023
+    KVAxis: ClassVar[AxisSelector] = Axis("kv", 2)
+
+    def align_to_chunk_size(self) -> "AttentionState":
+        kv = self.cached_kv
+        PositionAxis = kv.resolve_axis(self.PositionAxis)
+        length = PositionAxis.size
+        used_length = length - self.first_index
+        new_length = ((used_length - 1) // AttentionState.chunk_size + 1) * AttentionState.chunk_size
+        NewPositionAxis = Axis(self.PositionAxis.name, new_length)
+
+        if length > new_length:
+            padded_kv = kv[PositionAxis, -new_length:]
+        else:
+            padded_kv = hax.pad_left(kv, PositionAxis, NewPositionAxis)
+        
+        new_first_index = NewPositionAxis.size - used_length
+
+        return AttentionState(
+            cached_kv=padded_kv,
+            first_index=new_first_index,
+            PositionAxis=NewPositionAxis
+        )
 
 
 class AttentionBlock(eqx.Module):
     """A single transformer causal attention block."""
 
     QKVAxis: ClassVar[AxisSelector] = Axis("qkv", 3)
-    KVAxis: ClassVar[AxisSelector] = Axis("kv", 2)
     
     HeadsAxis: Axis = eqx.field(static=True) # Axis along which the heads are spread
     QueryKeyEmbedAxis: Axis = eqx.field(static=True) # Axis of the query/key along which dot products occur
@@ -100,7 +127,7 @@ class AttentionBlock(eqx.Module):
 
         # Concatenate the previous values and keys
         if state is not None:
-            previous_keys, previous_values = state.cached_kv.unbind(AttentionBlock.KVAxis)
+            previous_keys, previous_values = state.cached_kv[AttentionState.KVAxis, 0], state.cached_kv[AttentionState.KVAxis, 1]
             keys = hax.concatenate(key_value_pos_axis_name, [previous_keys, keys])
             values = hax.concatenate(key_value_pos_axis_name, [previous_values, values])
 
@@ -120,6 +147,10 @@ class AttentionBlock(eqx.Module):
         scores = hax.dot(queries, keys, axis=self.QueryKeyEmbedAxis) / jax.numpy.sqrt(self.QueryKeyEmbedAxis.size)
         # Apply causal mask
         scores = scores - 1.0E9 * (1.0 - causal_mask)
+        if state is not None:
+            # Mask out the values in the cache that are just padding
+            scores = scores - 1.0E9 * (hax.arange(KeyValuePositionAxis) < state.first_index)
+        
         # Convert to weights (weighted so that the sum along the key's position axis is 1.0)
         weights = hax.nn.softmax(scores, axis=KeyValuePositionAxis)
 
@@ -132,8 +163,12 @@ class AttentionBlock(eqx.Module):
         out = self.project_out(answers)
 
         if return_state:
-            kv = hax.stack(AttentionBlock.KVAxis, [keys, values])
-            new_state = AttentionState(cached_kv=kv)
+            kv = hax.stack(AttentionState.KVAxis, [keys, values])
+            new_state = AttentionState(
+                cached_kv=kv,
+                first_index=0 if state is None else state.first_index,
+                PositionAxis=KeyValuePositionAxis
+            )
             return out, new_state
         else:
             return out

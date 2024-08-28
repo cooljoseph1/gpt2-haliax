@@ -9,6 +9,7 @@ from  gpt2 import Gpt2State
 from .load_gpt2 import gpt2_model, VocabAxis
 from .tokenizer import gpt2_tokenizer
 
+@jax.jit
 def _get_next_id_and_state(
         id_sequence: NamedArray,
         key: jax.random.PRNGKey,
@@ -34,7 +35,6 @@ def _get_next_id_and_state(
     )
     return new_id, state
 
-
 def generate_ids(
     id_sequence: NamedArray,
     *,
@@ -46,6 +46,7 @@ def generate_ids(
      while i != num_ids:
         key, subkey = jax.random.split(key, 2)
         next_id, state = _get_next_id_and_state(id_sequence=id_sequence, key=subkey, state=state)
+        state = Gpt2State.align_to_chunks(state)
 
         yield next_id.item()
         id_sequence = next_id
